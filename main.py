@@ -84,7 +84,7 @@ class CircularObject:
         self.old_age()
         
     def old_age(self):
-        if self.bounces > 2:
+        if self.bounces > 3:
             self.alive = False
 
     def reflect(self):  
@@ -146,6 +146,17 @@ while True:
     #Update all objects
     for object in objects:
         object.update()
+
+    if clock.get_fps() < 40 and len(objects) > 20:
+        # Calculate the number of elements to remove (half of the list)
+        num_elements_to_remove = len(objects) // 2
+
+        # Randomly select half of the elements
+        elements_to_remove = random.sample(objects, num_elements_to_remove)
+
+        # Remove the selected elements
+        for element in elements_to_remove:
+            objects.remove(element)
 
     pygame.display.flip()
     clock.tick(60)
