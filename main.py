@@ -1,98 +1,151 @@
 import pygame
 import sys
-import math
 import random
+import numpy as np
+import math
+import pyautogui as pyag
+import time
+import threading
 
-# Initialize Pygame
-pygame.init()
+def calculate_centroid_np(points):
+    points_array = np.array(points)
+    centroid = np.mean(points_array, axis=0)
+    return tuple(centroid)
 
-# Set up display
-width, height = 1920, 1080
-screen = pygame.display.set_mode((width, height))
-pygame.display.set_caption("Moving Circles")
+def centroid_of_all_objects():
+    points = []
+    for object in objects:
+        points.append([object.x,object.y])
+    return calculate_centroid_np(points)
 
-# Set up circle properties
-circle_radius = 20
-circle_color = (255, 0, 0)  # Red
+def percentage_change(chance):
+    return random.uniform(0,1) < chance
 
-# Set up initial circle position
-circle_x = width // 2
-circle_y = height // 2
+WIDTH, HEIGHT = 1920, 1080
+SCREEN_CENTER = [WIDTH // 2, HEIGHT // 2]
+GRAVITY_STRENGTH = 1
+AIR_RESISTANCE = 0.1
 
-#
-circle_N = 1
+INITIAL_VELOCITY_VECTOR = [10,10]
 
-# Set up clock to control the frame rate
-clock = pygame.time.Clock()
+class mouse_velocity_listener:
 
+    def __init__(self):
+        
+        self.mouse_velocity = np.array([0,0])
+        self.last_mouse_pos = np.array([0,0])
+
+        self._listen_thread = threading.Thread(target=self._listener)
+        self._listen_thread.start()
+
+    def _listener(self):
+        while True:
+            new_mouse_pos = np.array(pyag.position())
+            self.mouse_velocity = new_mouse_pos - self.last_mouse_pos
+            time.sleep(0.01)
+            self.last_mouse_pos = new_mouse_pos
+
+mouseListener = mouse_velocity_listener()
+
+#Objects
 class CircularObject:
 
-    def __init__(self, radius=20, Vx = 10, Vy = 10, color = (255, 0, 0)):
+    def __init__(self, radius=100, Vx = 10, Vy = 10, color = (255, 0, 0), x = SCREEN_CENTER[0], y = SCREEN_CENTER[1]):
 
-        self.x = width // 2
-        self.y = height // 2
+        self.x = x
+        self.y = y
         self.Vx = Vx
         self.Vy = Vy
-        self.nnV = math.sqrt(self.Vx**2+self.Vy**2)
         self.mass = 20
         self.radius = radius
         self.color = color
-        self.is_outside = False
+        self.out_of_bounds = False
+        self.alive = True
+        self.bounces = 0
 
+    def isInBounds(self):
+        return 0 < self.x < WIDTH and 0 < self.y < HEIGHT
+    
+    def euclidian_velocity(self):
+        return math.sqrt(self.x**2+self.y**2)
+        
     def update(self):
 
+        if self.isInBounds():
+            self.out_of_bounds = False
+        else:
+            self.out_of_bounds = True
+            self.reflect()
+            if percentage_change(0.55) and self.euclidian_velocity() > 5:
+                self.duplicate()
+
+        self.move_by_velocity()
+        self.gravity()
+        self.old_age()
+        
+    def old_age(self):
+        if self.bounces > 2:
+            self.alive = False
+
+    def reflect(self):  
+        self.bounces += 1
+        if self.x < 0 or self.x > WIDTH:
+            self.Vx = -self.Vx
+        if self.y < 0 or self.y > HEIGHT:
+            self.Vy = -self.Vy
+        
+    def move_by_velocity(self):
         self.x += self.Vx
         self.y += self.Vy
 
-        if not self.is_outside and (( 0 < self.x < width and  0 < self.y < height)== False):
+    def drag(self):
+        self.Vx *= AIR_RESISTANCE*self.radius
+        self.Vy *= AIR_RESISTANCE*self.radius
 
-            self.Vy = math.cos(random.uniform(0,math.pi*2)) * 5
-            self.Vx = math.sin(random.uniform(0,math.pi*2)) * 5
+    def gravity(self):
+        self.Vy += GRAVITY_STRENGTH
 
-            self.is_outside = True
+    def resetPosition(self):
+        self.x = SCREEN_CENTER[0]
+        self.y = SCREEN_CENTER[1]
 
-            self.x = circle_x
-            self.y = circle_y
+    def duplicate(self, color = None):
 
-            self.duplicate()
+        if color == None:
+            randomColor = [random.uniform(0, 255) for _ in range(3)]
+            
+        mouseX, mouseY = pyag.position()
+        mouseX_velocity, mouseY_velocity = mouseListener.mouse_velocity
+        objects.append(CircularObject(radius = np.linalg.norm([mouseX_velocity,mouseY_velocity]), Vx = mouseX_velocity, Vy = mouseY_velocity, color = randomColor, x = mouseX, y= mouseY))
 
-        else:
-            self.is_outside = False
+#Sim
+pygame.init()
 
-    def duplicate(self):
+screen = pygame.display.set_mode((WIDTH, HEIGHT))
+pygame.display.set_caption("Moving Circles")
 
-        if random.randint(0,10) < 2:
-
-            randomColor = []
-            for i in range(3):
-                randomColor.append(random.uniform(0,255))
-
-            objects.append(CircularObject(self.radius*0.75, self.Vx/2, self.Vy/2, randomColor))
-            objects.append(CircularObject(self.radius*0.75, -self.Vx/2, -self.Vy/2, randomColor))
-
-
-circle1 = CircularObject()
-
-objects = [circle1]
-
-# Main game loop
+clock = pygame.time.Clock()
+objects = [CircularObject()]
+circle_N = 1
 while True:
+
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             pygame.quit()
             sys.exit()
 
-    # Clear the screen
-    screen.fill((255, 255, 255))  # White background
-
+    #Draw
+    screen.fill((255, 255, 255))
     for object in objects:
+
         pygame.draw.circle(screen, object.color, (object.x, object.y), object.radius)
+
+        if object.alive == False:
+            objects.remove(object)
     
-    for object in objects: 
+    #Update all objects
+    for object in objects:
         object.update()
 
-    # Update display
     pygame.display.flip()
-
-    # Cap the frame rate
-    clock.tick(60)  # Adjust the value to control the speed of the animation
+    clock.tick(60)
